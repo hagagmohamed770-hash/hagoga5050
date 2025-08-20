@@ -10,7 +10,14 @@ import {
   TrendingUp,
   AlertCircle,
   DollarSign,
-  Calendar
+  Calendar,
+  FolderOpen,
+  CreditCard,
+  Receipt,
+  Wallet,
+  BarChart3,
+  PiggyBank,
+  Calculator
 } from "lucide-react";
 
 const navigation = [
@@ -19,6 +26,54 @@ const navigation = [
     href: "/",
     icon: Home,
     description: "نظرة عامة على النظام"
+  },
+  {
+    name: "المشاريع",
+    href: "/projects",
+    icon: FolderOpen,
+    description: "إدارة المشاريع العقارية"
+  },
+  {
+    name: "الشركاء",
+    href: "/partners",
+    icon: UserCheck,
+    description: "إدارة الشركاء وحصص الأرباح"
+  },
+  {
+    name: "الخزائن",
+    href: "/cashboxes",
+    icon: Wallet,
+    description: "إدارة الخزائن والأرصدة"
+  },
+  {
+    name: "الفواتير",
+    href: "/invoices",
+    icon: Receipt,
+    description: "إدارة الفواتير والمدفوعات"
+  },
+  {
+    name: "المعاملات",
+    href: "/transactions",
+    icon: CreditCard,
+    description: "إدارة المعاملات المالية"
+  },
+  {
+    name: "التسويات",
+    href: "/settlements",
+    icon: Calculator,
+    description: "تسويات الشركاء"
+  },
+  {
+    name: "الإيرادات",
+    href: "/revenue",
+    icon: TrendingUp,
+    description: "إدارة الإيرادات"
+  },
+  {
+    name: "المصروفات",
+    href: "/expenses",
+    icon: PiggyBank,
+    description: "إدارة المصروفات"
   },
   {
     name: "الوحدات العقارية", 
@@ -33,15 +88,9 @@ const navigation = [
     description: "إدارة بيانات العملاء"
   },
   {
-    name: "الشركاء",
-    href: "/partners",
-    icon: UserCheck,
-    description: "إدارة الشركاء وحصص الأرباح"
-  },
-  {
     name: "التقارير",
     href: "/reports",
-    icon: FileText,
+    icon: BarChart3,
     description: "تقارير المبيعات والإحصائيات"
   },
   {
@@ -54,14 +103,20 @@ const navigation = [
 
 const quickStats = [
   { 
-    label: "وحدات متاحة", 
-    value: "12", 
-    icon: Building,
+    label: "مشاريع نشطة", 
+    value: "3", 
+    icon: FolderOpen,
     color: "text-blue-600 bg-blue-100"
   },
   { 
-    label: "أقساط متأخرة", 
-    value: "3", 
+    label: "خزائن", 
+    value: "2", 
+    icon: Wallet,
+    color: "text-green-600 bg-green-100"
+  },
+  { 
+    label: "تسويات معلقة", 
+    value: "1", 
     icon: AlertCircle,
     color: "text-red-600 bg-red-100"
   },
@@ -69,7 +124,7 @@ const quickStats = [
     label: "إجمالي الإيرادات", 
     value: "2.5م ج.م", 
     icon: TrendingUp,
-    color: "text-green-600 bg-green-100"
+    color: "text-purple-600 bg-purple-100"
   }
 ];
 
@@ -77,7 +132,7 @@ export default function Sidebar() {
   const [location] = useLocation();
 
   return (
-    <aside className="w-64 bg-white border-l border-gray-200 shadow-sm h-screen flex flex-col" dir="rtl">
+    <aside className="w-64 bg-white border-l border-gray-200 shadow-sm h-screen flex flex-col overflow-y-auto" dir="rtl">
       {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-3">
@@ -86,9 +141,9 @@ export default function Sidebar() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-900" data-testid="sidebar-title">
-              إدارة الاستثمار العقاري
+              نظام إدارة الخزائن والتسويات
             </h1>
-            <p className="text-sm text-gray-500">نظام شامل</p>
+            <p className="text-sm text-gray-500">نظام شامل للشركاء</p>
           </div>
         </div>
       </div>

@@ -1,341 +1,608 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Edit, Trash2, UserCheck, DollarSign, Percent, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Users, HandHeart, DollarSign, TrendingUp, Edit, Trash2, Eye } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPartnerSchema, type Partner } from "@shared/schema";
-import { z } from "zod";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/components/ui/use-toast";
+import { format } from "date-fns";
+import { ar } from "date-fns/locale";
 
-const partnerFormSchema = insertPartnerSchema.extend({
-  name: z.string().min(1, "اسم الشريك مطلوب"),
-  partnershipType: z.string().min(1, "نوع الشراكة مطلوب"),
-  profitPercentage: z.string().min(1, "نسبة الأرباح مطلوبة"),
-});
+interface Partner {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  sharePercentage: string;
+  previousBalance: string;
+  currentBalance: string;
+  projectId: string;
+  createdAt: string;
+  project?: {
+    name: string;
+  };
+}
 
-type PartnerFormData = z.infer<typeof partnerFormSchema>;
+interface Project {
+  id: string;
+  name: string;
+}
 
 export default function Partners() {
-  const { toast } = useToast();
-  const [search, setSearch] = useState<string>("");
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
+  const queryClient = useQueryClient();
 
+  // Fetch partners
   const { data: partners = [], isLoading } = useQuery<Partner[]>({
-    queryKey: ["/api/partners"],
+    queryKey: ["partners"],
+    queryFn: async () => {
+      const response = await fetch("/api/partners");
+      if (!response.ok) throw new Error("فشل في جلب الشركاء");
+      return response.json();
+    },
   });
 
+  // Fetch projects
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const response = await fetch("/api/projects");
+      if (!response.ok) throw new Error("فشل في جلب المشاريع");
+      return response.json();
+    },
+  });
+
+  // Create partner mutation
   const createPartnerMutation = useMutation({
-    mutationFn: async (data: PartnerFormData) => {
+    mutationFn: async (data: any) => {
       const response = await fetch("/api/partners", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("فشل في إضافة الشريك");
+      if (!response.ok) throw new Error("فشل في إنشاء الشريك");
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/partners"] });
-      toast({ title: "تمت إضافة الشريك بنجاح" });
-      setIsAddDialogOpen(false);
-      form.reset();
+      queryClient.invalidateQueries({ queryKey: ["partners"] });
+      setIsCreateDialogOpen(false);
+      toast({
+        title: "تم إنشاء الشريك بنجاح",
+        description: "تم إضافة الشريك الجديد إلى النظام",
+      });
     },
-    onError: () => {
-      toast({ title: "فشل في إضافة الشريك", variant: "destructive" });
-    },
-  });
-
-  const form = useForm<PartnerFormData>({
-    resolver: zodResolver(partnerFormSchema),
-    defaultValues: {
-      name: "",
-      partnershipType: "",
-      profitPercentage: "",
-      receivedPayments: "0",
-      remainingPayments: "0",
+    onError: (error) => {
+      toast({
+        title: "خطأ",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
-  const onSubmit = (data: PartnerFormData) => {
+  // Update partner mutation
+  const updatePartnerMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await fetch(`/api/partners/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("فشل في تحديث الشريك");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["partners"] });
+      setIsEditDialogOpen(false);
+      setSelectedPartner(null);
+      toast({
+        title: "تم تحديث الشريك بنجاح",
+        description: "تم تحديث بيانات الشريك",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "خطأ",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete partner mutation
+  const deletePartnerMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/partners/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("فشل في حذف الشريك");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["partners"] });
+      toast({
+        title: "تم حذف الشريك بنجاح",
+        description: "تم حذف الشريك من النظام",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "خطأ",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCreatePartner = (data: any) => {
     createPartnerMutation.mutate(data);
   };
 
-  const filteredPartners = partners.filter((partner) => {
-    return partner.name.includes(search) || partner.partnershipType.includes(search);
-  });
-
-  const formatCurrency = (amount: string | null) => {
-    if (!amount) return "0 ج.م";
-    return new Intl.NumberFormat('ar-EG', {
-      style: 'currency',
-      currency: 'EGP',
-      minimumFractionDigits: 0,
-    }).format(parseFloat(amount));
-  };
-
-  const getPartnershipBadgeColor = (type: string) => {
-    switch (type) {
-      case "50/50":
-        return "default";
-      case "70/30":
-      case "30/70":
-        return "secondary";
-      case "60/40":
-      case "40/60":
-        return "outline";
-      default:
-        return "destructive";
+  const handleUpdatePartner = (data: any) => {
+    if (selectedPartner) {
+      updatePartnerMutation.mutate({ id: selectedPartner.id, data });
     }
   };
 
+  const handleDeletePartner = (id: string) => {
+    if (confirm("هل أنت متأكد من حذف هذا الشريك؟")) {
+      deletePartnerMutation.mutate(id);
+    }
+  };
+
+  const getProjectName = (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || "غير محدد";
+  };
+
+  const getBalanceStatus = (currentBalance: string) => {
+    const balance = parseFloat(currentBalance);
+    if (balance > 0) {
+      return { variant: "default", text: "رصيد إيجابي", color: "text-green-600" };
+    } else if (balance < 0) {
+      return { variant: "destructive", text: "رصيد سالب", color: "text-red-600" };
+    } else {
+      return { variant: "secondary", text: "رصيد متوازن", color: "text-gray-600" };
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-lg">جاري التحميل...</div>
+        </div>
+      </div>
+    );
+  }
+
+  const totalSharePercentage = partners.reduce((sum, p) => sum + parseFloat(p.sharePercentage), 0);
+  const totalCurrentBalance = partners.reduce((sum, p) => sum + parseFloat(p.currentBalance), 0);
+
   return (
-    <div className="p-6 space-y-6" dir="rtl">
-      <div className="flex justify-between items-center">
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">الشركاء</h1>
-          <p className="text-gray-600">إدارة الشركاء وحصص الأرباح</p>
+          <p className="text-gray-600 mt-2">إدارة الشركاء وحصص الأرباح في المشاريع</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="button-add-partner">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button>
+              <Plus className="w-4 h-4 ml-2" />
               إضافة شريك جديد
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md" dir="rtl">
+          <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>إضافة شريك جديد</DialogTitle>
+              <DialogDescription>
+                أدخل بيانات الشريك الجديد
+              </DialogDescription>
             </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>اسم الشريك</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="محمد أحمد" data-testid="input-partner-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="partnershipType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>نوع الشراكة</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-partnership-type">
-                            <SelectValue placeholder="اختر نوع الشراكة" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="50/50">50/50</SelectItem>
-                          <SelectItem value="70/30">70/30</SelectItem>
-                          <SelectItem value="30/70">30/70</SelectItem>
-                          <SelectItem value="60/40">60/40</SelectItem>
-                          <SelectItem value="40/60">40/60</SelectItem>
-                          <SelectItem value="80/20">80/20</SelectItem>
-                          <SelectItem value="20/80">20/80</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="profitPercentage"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>نسبة الأرباح (%)</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="number" min="0" max="100" step="0.01" placeholder="50" data-testid="input-profit-percentage" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="receivedPayments"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>المبالغ المستلمة (جنيه)</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} type="number" placeholder="0" data-testid="input-received-payments" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="remainingPayments"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>المبالغ المتبقية (جنيه)</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} type="number" placeholder="0" data-testid="input-remaining-payments" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex gap-2 pt-4">
-                  <Button 
-                    type="submit" 
-                    className="flex-1"
-                    disabled={createPartnerMutation.isPending}
-                    data-testid="button-submit-partner"
-                  >
-                    {createPartnerMutation.isPending ? "جاري الإضافة..." : "إضافة الشريك"}
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setIsAddDialogOpen(false)}
-                    data-testid="button-cancel"
-                  >
-                    إلغاء
-                  </Button>
-                </div>
-              </form>
-            </Form>
+            <CreatePartnerForm onSubmit={handleCreatePartner} projects={projects} />
           </DialogContent>
         </Dialog>
       </div>
 
-      <div className="flex gap-4 items-center">
-        <div className="relative flex-1">
-          <Search className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي الشركاء</CardTitle>
+            <UserCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{partners.length}</div>
+            <p className="text-xs text-muted-foreground">شريك</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي نسبة المشاركة</CardTitle>
+            <Percent className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalSharePercentage}%</div>
+            <p className="text-xs text-muted-foreground">من إجمالي المشاريع</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي الأرصدة</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalCurrentBalance.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">ج.م</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">متوسط الرصيد</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {partners.length > 0 ? (totalCurrentBalance / partners.length).toLocaleString() : "0"}
+            </div>
+            <p className="text-xs text-muted-foreground">ج.م لكل شريك</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Partners Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {partners.map((partner) => {
+          const balanceStatus = getBalanceStatus(partner.currentBalance);
+          return (
+            <Card key={partner.id} className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg">{partner.name}</CardTitle>
+                    <CardDescription className="mt-2">
+                      {getProjectName(partner.projectId)}
+                    </CardDescription>
+                  </div>
+                  <Badge variant={balanceStatus.variant as any}>{balanceStatus.text}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">نسبة المشاركة:</span>
+                    <span className="font-semibold">{partner.sharePercentage}%</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">الرصيد السابق:</span>
+                    <span className="font-semibold">{parseFloat(partner.previousBalance).toLocaleString()} ج.م</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">الرصيد الحالي:</span>
+                    <span className={`font-semibold ${balanceStatus.color}`}>
+                      {parseFloat(partner.currentBalance).toLocaleString()} ج.م
+                    </span>
+                  </div>
+                  
+                  {partner.phone && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>الهاتف: {partner.phone}</span>
+                    </div>
+                  )}
+                  
+                  {partner.email && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>البريد الإلكتروني: {partner.email}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Calendar className="w-4 h-4" />
+                    <span>تاريخ الإنضمام: {format(new Date(partner.createdAt), "dd/MM/yyyy", { locale: ar })}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPartner(partner);
+                        setIsEditDialogOpen(true);
+                      }}
+                    >
+                      <Edit className="w-4 h-4 ml-1" />
+                      تعديل
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeletePartner(partner.id)}
+                    >
+                      <Trash2 className="w-4 h-4 ml-1" />
+                      حذف
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>تعديل الشريك</DialogTitle>
+            <DialogDescription>
+              قم بتعديل بيانات الشريك
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPartner && (
+            <EditPartnerForm 
+              partner={selectedPartner} 
+              onSubmit={handleUpdatePartner}
+              projects={projects}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CreatePartnerForm({ 
+  onSubmit, 
+  projects 
+}: { 
+  onSubmit: (data: any) => void;
+  projects: Project[];
+}) {
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    sharePercentage: "",
+    previousBalance: "0",
+    currentBalance: "0",
+    projectId: "",
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="name">اسم الشريك</Label>
+        <Input
+          id="name"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          required
+        />
+      </div>
+      
+      <div>
+        <Label htmlFor="projectId">المشروع</Label>
+        <Select value={formData.projectId} onValueChange={(value) => setFormData({ ...formData, projectId: value })}>
+          <SelectTrigger>
+            <SelectValue placeholder="اختر المشروع" />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((project) => (
+              <SelectItem key={project.id} value={project.id}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="phone">رقم الهاتف</Label>
           <Input
-            placeholder="البحث في الشركاء..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pr-10"
-            data-testid="input-search-partners"
+            id="phone"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label htmlFor="email">البريد الإلكتروني</Label>
+          <Input
+            id="email"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           />
         </div>
       </div>
-
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader className="space-y-2">
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="h-3 bg-gray-200 rounded"></div>
-                  <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      
+      <div>
+        <Label htmlFor="address">العنوان</Label>
+        <Textarea
+          id="address"
+          value={formData.address}
+          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+        />
+      </div>
+      
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="sharePercentage">نسبة المشاركة (%)</Label>
+          <Input
+            id="sharePercentage"
+            type="number"
+            value={formData.sharePercentage}
+            onChange={(e) => setFormData({ ...formData, sharePercentage: e.target.value })}
+            required
+          />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredPartners.map((partner) => (
-            <Card key={partner.id} className="hover:shadow-lg transition-shadow" data-testid={`card-partner-${partner.id}`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Users className="w-5 h-5" />
-                    <span data-testid={`text-partner-name-${partner.id}`}>{partner.name}</span>
-                  </CardTitle>
-                  <Badge 
-                    variant={getPartnershipBadgeColor(partner.partnershipType)}
-                    data-testid={`badge-partnership-${partner.id}`}
-                  >
-                    {partner.partnershipType}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-1 text-sm text-gray-600">
-                  <TrendingUp className="w-4 h-4" />
-                  <span data-testid={`text-profit-percentage-${partner.id}`}>{partner.profitPercentage}% نسبة الأرباح</span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-3">
-                  <div className="bg-green-50 p-3 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium text-green-800">المبالغ المستلمة</span>
-                      </div>
-                      <span className="font-bold text-green-800" data-testid={`text-received-payments-${partner.id}`}>
-                        {formatCurrency(partner.receivedPayments)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bg-orange-50 p-3 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <HandHeart className="w-4 h-4 text-orange-600" />
-                        <span className="text-sm font-medium text-orange-800">المبالغ المتبقية</span>
-                      </div>
-                      <span className="font-bold text-orange-800" data-testid={`text-remaining-payments-${partner.id}`}>
-                        {formatCurrency(partner.remainingPayments)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="flex-1"
-                    data-testid={`button-view-${partner.id}`}
-                  >
-                    <Eye className="w-4 h-4 mr-1" />
-                    عرض
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="flex-1"
-                    data-testid={`button-edit-${partner.id}`}
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    تعديل
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div>
+          <Label htmlFor="previousBalance">الرصيد السابق</Label>
+          <Input
+            id="previousBalance"
+            type="number"
+            value={formData.previousBalance}
+            onChange={(e) => setFormData({ ...formData, previousBalance: e.target.value })}
+            required
+          />
         </div>
-      )}
+        <div>
+          <Label htmlFor="currentBalance">الرصيد الحالي</Label>
+          <Input
+            id="currentBalance"
+            type="number"
+            value={formData.currentBalance}
+            onChange={(e) => setFormData({ ...formData, currentBalance: e.target.value })}
+            required
+          />
+        </div>
+      </div>
+      
+      <div className="flex justify-end gap-2">
+        <Button type="submit">إنشاء الشريك</Button>
+      </div>
+    </form>
+  );
+}
 
-      {!isLoading && filteredPartners.length === 0 && (
-        <Card className="text-center p-8">
-          <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">لا توجد شركاء</h3>
-          <p className="text-gray-600 mb-4">
-            {search ? "لا توجد شركاء تطابق معايير البحث" : "لم يتم إضافة أي شركاء بعد"}
-          </p>
-          {!search && (
-            <Button onClick={() => setIsAddDialogOpen(true)} data-testid="button-add-first-partner">
-              <Plus className="w-4 h-4 mr-2" />
-              إضافة أول شريك
-            </Button>
-          )}
-        </Card>
-      )}
-    </div>
+function EditPartnerForm({ 
+  partner, 
+  onSubmit, 
+  projects 
+}: { 
+  partner: Partner;
+  onSubmit: (data: any) => void;
+  projects: Project[];
+}) {
+  const [formData, setFormData] = useState({
+    name: partner.name,
+    phone: partner.phone || "",
+    email: partner.email || "",
+    address: partner.address || "",
+    sharePercentage: partner.sharePercentage,
+    previousBalance: partner.previousBalance,
+    currentBalance: partner.currentBalance,
+    projectId: partner.projectId,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="edit-name">اسم الشريك</Label>
+        <Input
+          id="edit-name"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          required
+        />
+      </div>
+      
+      <div>
+        <Label htmlFor="edit-projectId">المشروع</Label>
+        <Select value={formData.projectId} onValueChange={(value) => setFormData({ ...formData, projectId: value })}>
+          <SelectTrigger>
+            <SelectValue placeholder="اختر المشروع" />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((project) => (
+              <SelectItem key={project.id} value={project.id}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="edit-phone">رقم الهاتف</Label>
+          <Input
+            id="edit-phone"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label htmlFor="edit-email">البريد الإلكتروني</Label>
+          <Input
+            id="edit-email"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          />
+        </div>
+      </div>
+      
+      <div>
+        <Label htmlFor="edit-address">العنوان</Label>
+        <Textarea
+          id="edit-address"
+          value={formData.address}
+          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+        />
+      </div>
+      
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="edit-sharePercentage">نسبة المشاركة (%)</Label>
+          <Input
+            id="edit-sharePercentage"
+            type="number"
+            value={formData.sharePercentage}
+            onChange={(e) => setFormData({ ...formData, sharePercentage: e.target.value })}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="edit-previousBalance">الرصيد السابق</Label>
+          <Input
+            id="edit-previousBalance"
+            type="number"
+            value={formData.previousBalance}
+            onChange={(e) => setFormData({ ...formData, previousBalance: e.target.value })}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="edit-currentBalance">الرصيد الحالي</Label>
+          <Input
+            id="edit-currentBalance"
+            type="number"
+            value={formData.currentBalance}
+            onChange={(e) => setFormData({ ...formData, currentBalance: e.target.value })}
+            required
+          />
+        </div>
+      </div>
+      
+      <div className="flex justify-end gap-2">
+        <Button type="submit">تحديث الشريك</Button>
+      </div>
+    </form>
   );
 }
